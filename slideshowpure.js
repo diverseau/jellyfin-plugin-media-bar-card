@@ -96,8 +96,11 @@ const CONFIG = {
   // true|false. Paint a blurred approximation of the backdrop while the real image loads. Costs no request.
   useBlurHashPlaceholder: true,
 
-  // "marquee" | "plate" | "classic". marquee = spec line + progress rule, panel on phone. plate = type on a tinted panel. classic = the original.
-  layout: "marquee",
+  // "card" | "marquee" | "plate" | "classic". card = marquee content on a rounded card with an ambient glow (phones fall back to marquee). marquee = spec line + progress rule, panel on phone. plate = type on a tinted panel. classic = the original.
+  layout: "card",
+
+  // 0-1. Card layout only. Strength of the colour glow taken from the artwork. 0 turns it off.
+  cardGlow: 0.6,
 
   // 0-1. Plate layout only. Target lightness of the panel. 0.035 holds white text near 12:1.
   plateLuminance: 0.035,
@@ -159,13 +162,15 @@ const CONFIG_RULES = {
   plateLuminance: [0, 1],
   plateAccentLuminance: [0, 1],
   plateSpecRows: [1, 8],
-  layout: ["classic", "marquee", "plate"],
+  layout: ["classic", "marquee", "plate", "card"],
+  cardGlow: [0, 1],
   plateFallback: "colour",
   plateAccentFallback: "colour",
 };
 
 const STRUCTURAL_CONFIG_KEYS = new Set([
   "layout",
+  "cardGlow",
   "maxItems",
   "maxMovies",
   "maxSeries",
@@ -956,12 +961,17 @@ const SlideUtils = {
       document.body.appendChild(container);
     }
 
+    // The card layout builds marquee content, so it keeps the marquee classes
+    // (and the marquee phone layout) and adds its own on top.
     container.classList.toggle("layout-plate", CONFIG.layout === "plate");
-    container.classList.toggle("layout-marquee", CONFIG.layout === "marquee");
+    container.classList.toggle("layout-marquee", isMarqueeLayout());
+    container.classList.toggle("layout-card", isCardLayout());
+    container.style.setProperty("--card-glow", String(CONFIG.cardGlow));
 
     const root = document.documentElement;
     root.classList.toggle("sspure-plate", CONFIG.layout === "plate");
-    root.classList.toggle("sspure-marquee", CONFIG.layout === "marquee");
+    root.classList.toggle("sspure-marquee", isMarqueeLayout());
+    root.classList.toggle("sspure-card", isCardLayout());
 
     return container;
   },
@@ -2343,6 +2353,23 @@ const SlideCreator = {
 
     backdropContainer.append(backdrop, backdropOverlay);
 
+    // Card layout: a blurred wash of the artwork's colours behind the card.
+    // Built from the item's BlurHash, so it costs no extra request.
+    let ambient = null;
+    if (isCardLayout() && CONFIG.cardGlow > 0) {
+      const ambientTag = item.BackdropImageTags?.[0] || item.ImageTags?.Backdrop;
+      const ambientImage = BlurHash.toDataURL(
+        BlurHash.forItem(item, "Backdrop", ambientTag),
+      );
+      if (ambientImage) {
+        ambient = SlideUtils.createElement("div", {
+          className: "card-ambient",
+          "aria-hidden": "true",
+        });
+        ambient.style.backgroundImage = `url("${ambientImage}")`;
+      }
+    }
+
     const logo = SlideUtils.createElement("img", {
       className: "logo high-quality",
       src: this.buildImageUrl(item, "Logo", undefined, serverAddress, 40),
@@ -2430,7 +2457,9 @@ const SlideCreator = {
       SlideUtils.createElement(
         "span",
         { className: "action-label" },
-        LocalizationUtils.getLocalizedString("Details", "Details"),
+        isCardLayout()
+          ? LocalizationUtils.getLocalizedString("MoreInfo", "More info")
+          : LocalizationUtils.getLocalizedString("Details", "Details"),
       ),
     );
     favoriteButton.appendChild(
@@ -2494,6 +2523,7 @@ const SlideCreator = {
       );
     }
 
+    if (ambient) slide.append(ambient);
     slide.append(backdropContainer);
 
     if (isPlateLayout()) {
@@ -3070,6 +3100,16 @@ const SlideshowManager = {
 
   positionDots(slide, container) {
     if (!isPlateLayout() && !isMarqueeLayout()) return;
+
+    if (isCardActive()) {
+      // The card's stylesheet places the arrows; drop marquee positions left inline
+      container.querySelectorAll(".arrow").forEach((arrow) => {
+        arrow.style.removeProperty("top");
+        arrow.style.removeProperty("bottom");
+        arrow.style.removeProperty("transform");
+      });
+      return;
+    }
 
     const dots = container.querySelector(".dots-container");
     const buttons = slide?.querySelector(".button-container");
@@ -3821,6 +3861,8 @@ const LayoutSync = {
 
     const rows = document.querySelector(".homeSectionsContainer");
     const stage = document.getElementById("slides-container");
+
+    moved = this.updateCard(rows, stage, offset) || moved;
     if (rows && stage) {
       const rowsTop = Math.round(
         rows.getBoundingClientRect().top - stage.getBoundingClientRect().top,
@@ -3831,6 +3873,62 @@ const LayoutSync = {
     }
 
     if (moved) SlideshowManager.repositionChrome();
+  },
+
+  // Card layout: start the card just under whatever the header shows (themes
+  // and narrow windows move the tabs onto a second row) and start the rows
+  // just under the card.
+  updateCard(rows, stage, offset) {
+    const root = document.documentElement.style;
+    if (!isCardActive() || !rows || !stage) {
+      let cleared = false;
+      for (const name of ["--card-top", "--slideshow-content-top"]) {
+        if (this.published[name] !== undefined) {
+          root.removeProperty(name);
+          delete this.published[name];
+          cleared = true;
+        }
+      }
+      return cleared;
+    }
+
+    const gap = Math.round(Math.min(24, Math.max(14, window.innerWidth * 0.014)));
+    let moved = this.publish("--card-top", `${this.headerBottom() + gap}px`);
+
+    const frame = stage.querySelector(".slide .backdrop-container");
+    if (!frame) return moved;
+
+    const scroll = document.scrollingElement.scrollTop;
+    const cardBottom = frame.getBoundingClientRect().bottom + scroll;
+    const rowsMargin = parseFloat(getComputedStyle(rows).marginTop) || 0;
+    const rowsNaturalTop = rows.getBoundingClientRect().top + scroll - rowsMargin;
+    const rowsGap = Math.round(Math.min(40, Math.max(24, window.innerWidth * 0.022)));
+
+    // .homeSectionsContainer margin-top is content-top minus page-offset
+    const contentTop = Math.round(cardBottom + rowsGap - rowsNaturalTop + offset);
+    moved = this.publish("--slideshow-content-top", `${contentTop}px`) || moved;
+    return moved;
+  },
+
+  headerBottom() {
+    const header = document.querySelector(".skinHeader");
+    if (!header) return 0;
+
+    let bottom = 0;
+    header
+      .querySelectorAll("button, a, .pageTitle, .emby-tab-button")
+      .forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        if (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.bottom > bottom &&
+          rect.bottom < window.innerHeight / 2
+        ) {
+          bottom = rect.bottom;
+        }
+      });
+    return Math.round(bottom || header.getBoundingClientRect().bottom);
   },
 
   init() {
@@ -3888,6 +3986,7 @@ const SettingsPanel = {
       label: "Layout",
       type: "choice",
       options: [
+        ["card", "Card"],
         ["plate", "Plate"],
         ["marquee", "Marquee"],
         ["classic", "Classic"],
@@ -4356,7 +4455,17 @@ const isTouchLayout = () =>
 
 const isPlateLayout = () => CONFIG.layout === "plate";
 
-const isMarqueeLayout = () => CONFIG.layout === "marquee";
+const isCardLayout = () => CONFIG.layout === "card";
+
+// Keep in step with the media query that wraps the card rules in slideshowpure.css.
+// Below it the card layout shows the marquee look.
+const CARD_MEDIA = "(min-width: 768px) and (min-height: 500px)";
+
+const isCardActive = () =>
+  isCardLayout() && window.matchMedia(CARD_MEDIA).matches;
+
+const isMarqueeLayout = () =>
+  CONFIG.layout === "marquee" || CONFIG.layout === "card";
 
 const slidesInit = async () => {
   if (STATE.slideshow.hasInitialized) {

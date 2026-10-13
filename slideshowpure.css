@@ -2243,3 +2243,307 @@
     transition: none;
   }
 }
+
+/* ==========================================================================
+   Card layout: marquee content on a rounded card that lines up with the
+   home rows, with a soft glow of the artwork's colours behind it.
+   Phones and short windows keep the marquee look. Keep this media query in
+   step with CARD_MEDIA in slideshowpure.js.
+   ========================================================================== */
+
+@media (min-width: 768px) and (min-height: 500px) {
+  :root.sspure-card {
+    /* LayoutSync publishes --card-top and --slideshow-content-top from the
+       real header and rows; these are the fallbacks until it runs. */
+    --card-top: 5.25rem;
+    --card-side: 3.3vw;
+    --card-h: max(15rem, min(calc((100vw - 2 * var(--card-side)) / 2.3), calc(100vh - var(--card-top) - 13rem)));
+    --card-radius: 16px;
+    --card-tail: 9rem;
+    --slideshow-height: calc(var(--card-top) + var(--card-h) + var(--card-tail));
+    --slideshow-content-top: calc(var(--card-top) + var(--card-h) - 3rem);
+  }
+
+  /* Themes such as NeutralFin pull the stage up under the header */
+  #slides-container.layout-marquee.layout-card {
+    top: 0;
+    margin-top: 0;
+    height: var(--slideshow-height);
+  }
+
+  /* --- Glow ------------------------------------------------------------- */
+
+  #slides-container.layout-marquee.layout-card .card-ambient {
+    position: absolute;
+    top: -80px;
+    left: -80px;
+    right: -80px;
+    bottom: 0;
+    z-index: 0;
+    background-size: 100% 100%;
+    filter: blur(48px) saturate(1.25);
+    opacity: var(--card-glow, 0.6);
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 40%, transparent 100%);
+  }
+
+  /* --- The card --------------------------------------------------------- */
+
+  #slides-container.layout-marquee.layout-card .backdrop-container,
+  #slides-container.layout-marquee.layout-card .gradient-overlay,
+  #slides-container.layout-marquee.layout-card .video-container {
+    top: var(--card-top);
+    left: var(--card-side);
+    right: var(--card-side);
+    bottom: auto;
+    width: auto;
+    height: var(--card-h);
+    border-radius: var(--card-radius);
+    overflow: hidden;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  #slides-container.layout-marquee.layout-card .backdrop-container {
+    z-index: 1;
+    box-shadow: 0 16px 48px rgb(0 0 0 / 0.45);
+  }
+
+  #slides-container.layout-marquee.layout-card .backdrop,
+  #slides-container.layout-marquee.layout-card .backdrop.with-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 25%;
+    border-radius: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  #slides-container.layout-marquee.layout-card .slide:has(.video-container.active) .backdrop {
+    opacity: 0;
+  }
+
+  #slides-container.layout-marquee.layout-card .backdrop-overlay {
+    border-radius: 0;
+    background: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  #slides-container.layout-marquee.layout-card .video-container {
+    z-index: 2;
+  }
+
+  #slides-container.layout-marquee.layout-card .gradient-overlay {
+    z-index: 4;
+    background:
+      linear-gradient(90deg, rgb(0 0 0 / 0.72) 0%, rgb(0 0 0 / 0.45) 32%, transparent 62%),
+      linear-gradient(0deg, rgb(0 0 0 / 0.45) 0%, transparent 40%);
+  }
+
+  /* --- Text, bottom-left of the card ------------------------------------ */
+
+  #slides-container.layout-marquee.layout-card .slide-content {
+    top: auto;
+    left: calc(var(--card-side) + clamp(1.5rem, 2.6vw, 3rem));
+    bottom: calc(var(--card-tail) + clamp(1.5rem, 2.8vw, 3.25rem));
+    width: min(42%, 40rem);
+    max-height: calc(var(--card-h) - 3rem);
+    gap: clamp(0.5rem, 1.1vh, 0.9rem);
+    transform: none;
+  }
+
+  #slides-container.layout-marquee.layout-card .logo-container {
+    height: clamp(3.5rem, 11vw, 9rem);
+    max-width: 85%;
+    margin-bottom: 0.6rem;
+  }
+
+  #slides-container.layout-marquee.layout-card .logo {
+    filter: drop-shadow(0 2px 12px rgb(0 0 0 / 0.35));
+  }
+
+  #slides-container.layout-marquee.layout-card .spec-rail,
+  #slides-container.layout-marquee.layout-card .dots-container,
+  #slides-container.layout-marquee.layout-card .favorite-button,
+  #slides-container.layout-marquee.layout-card .spec-rating,
+  #slides-container.layout-marquee.layout-card .spec-critics {
+    display: none;
+  }
+
+  /* "Drama · Mystery • 2019 • 1 Season • MA 15+" */
+  #slides-container.layout-marquee.layout-card .spec-line {
+    font-family: inherit;
+    font-size: clamp(0.85rem, 0.72rem + 0.3vw, 1.05rem);
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #fff;
+    text-shadow: 0 1px 6px rgb(0 0 0 / 0.5);
+  }
+
+  #slides-container.layout-marquee.layout-card .spec-genre { order: 1; }
+  #slides-container.layout-marquee.layout-card .spec-year { order: 2; }
+  #slides-container.layout-marquee.layout-card .spec-runtime { order: 3; }
+  #slides-container.layout-marquee.layout-card .spec-cert { order: 4; }
+
+  #slides-container.layout-marquee.layout-card .spec-item,
+  #slides-container.layout-marquee.layout-card .spec-cert,
+  #slides-container.layout-marquee.layout-card .spec-item + .spec-item,
+  #slides-container.layout-marquee.layout-card .spec-item + .spec-cert {
+    position: static;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
+  #slides-container.layout-marquee.layout-card .spec-year::before,
+  #slides-container.layout-marquee.layout-card .spec-runtime::before,
+  #slides-container.layout-marquee.layout-card .spec-cert::before,
+  #slides-container.layout-marquee.layout-card .spec-item + .spec-cert::before {
+    content: "•";
+    position: static;
+    width: auto;
+    background: none;
+    margin: 0 0.55em;
+    color: rgb(255 255 255 / 0.6);
+  }
+
+  #slides-container.layout-marquee.layout-card .plot {
+    font-size: clamp(0.95rem, 0.78rem + 0.45vw, 1.35rem);
+    line-height: 1.4;
+    color: #fff;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    text-shadow: 0 1px 8px rgb(0 0 0 / 0.5);
+  }
+
+  /* --- Buttons: white Play, grey More info ------------------------------ */
+
+  #slides-container.layout-marquee.layout-card .button-container {
+    gap: 0.75rem;
+    margin-top: 0.6rem;
+  }
+
+  /* !important: themes restyle Jellyfin's .detailButton with !important */
+  #slides-container.layout-marquee.layout-card .play-button,
+  #slides-container.layout-marquee.layout-card .detail-button {
+    width: auto;
+    height: clamp(2.4rem, 2rem + 0.9vw, 3rem);
+    margin: 0 !important;
+    padding: 0 1.5em 0 1.15em;
+    border: 0 !important;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: clamp(0.95rem, 0.8rem + 0.4vw, 1.2rem);
+    font-weight: 600;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  #slides-container.layout-marquee.layout-card .play-button {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  #slides-container.layout-marquee.layout-card .play-button:hover {
+    background: rgb(255 255 255 / 0.8) !important;
+  }
+
+  #slides-container.layout-marquee.layout-card .play-button::before {
+    font-size: 1.6em;
+    margin-right: 0.1em;
+  }
+
+  #slides-container.layout-marquee.layout-card .detail-button {
+    padding: 0 1.4em;
+    background: rgb(109 109 110 / 0.7) !important;
+    color: #fff !important;
+  }
+
+  #slides-container.layout-marquee.layout-card .detail-button:hover {
+    background: rgb(109 109 110 / 0.45) !important;
+  }
+
+  #slides-container.layout-marquee.layout-card .detail-button::before {
+    content: none;
+  }
+
+  #slides-container.layout-marquee.layout-card .detail-button .action-label {
+    display: inline;
+  }
+
+  /* --- Previous / next: outlined circles beside the card ---------------- */
+
+  #slides-container.layout-marquee.layout-card .arrow {
+    top: calc(var(--card-top) + var(--card-h) / 2 - 1.25rem);
+    bottom: auto;
+    transform: none;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1.5px solid rgb(255 255 255 / 0.8);
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    opacity: 1;
+    visibility: visible;
+  }
+
+  #slides-container.layout-marquee.layout-card .arrow:hover {
+    background: rgb(255 255 255 / 0.14);
+    border-color: #fff;
+  }
+
+  #slides-container.layout-marquee.layout-card .arrow i {
+    font-size: 1.5rem;
+  }
+
+  #slides-container.layout-marquee.layout-card .left-arrow {
+    left: max(0.25rem, calc((var(--card-side) - 2.5rem) / 2));
+    right: auto;
+  }
+
+  #slides-container.layout-marquee.layout-card .right-arrow {
+    right: max(0.25rem, calc((var(--card-side) - 2.5rem) / 2));
+    left: auto;
+  }
+
+  /* --- Mute / pause / settings: bottom-right inside the card ------------ */
+
+  #slides-container.layout-marquee.layout-card .ss-chrome {
+    top: auto;
+    bottom: calc(var(--card-tail) + 1.25rem);
+  }
+
+  #slides-container.layout-marquee.layout-card .volume-toggle { right: calc(var(--card-side) + 1.25rem); }
+  #slides-container.layout-marquee.layout-card .pause-button { right: calc(var(--card-side) + 3.5rem); }
+  #slides-container.layout-marquee.layout-card .ss-settings-toggle { right: calc(var(--card-side) + 5.75rem); }
+}
+
+/* Side gap too narrow for the arrows: put them on the card's edges */
+@media (min-width: 768px) and (max-width: 1399px) and (min-height: 500px) {
+  #slides-container.layout-marquee.layout-card .arrow {
+    background: rgb(0 0 0 / 0.35);
+  }
+
+  #slides-container.layout-marquee.layout-card .left-arrow {
+    left: calc(var(--card-side) + 0.75rem);
+  }
+
+  #slides-container.layout-marquee.layout-card .right-arrow {
+    right: calc(var(--card-side) + 0.75rem);
+  }
+
+  #slides-container.layout-marquee.layout-card .slide-content {
+    left: calc(var(--card-side) + 4.25rem);
+  }
+}
