@@ -12,13 +12,15 @@ Everything Media Bar does (random or listed titles, trailers, filters, the gear 
 - **An ambient glow** behind the card, built from each title's own artwork colours. It changes with every slide and costs no extra downloads (it uses the blur preview Jellyfin already sends).
 - **Play** and **More info** pill buttons, and a clean `Genre • Year • Runtime • Rating` line.
 - **Previous / next** circle buttons beside the card (on the card's edges when the window is narrow).
-- **Trailers** play inside the card's rounded frame.
+- **Trailers** play inside the card's rounded frame, for at most 30 seconds before the next slide (`maxTrailerSeconds`, 0 = whole trailer).
+- The card's picture stays still (no slow zoom).
 - Phones and short windows keep Media Bar's marquee layout.
 
 You can still switch to Marquee, Plate or Classic from the gear menu on the bar.
 
 It also fixes some Media Bar issues:
 
+- Slides advance on their own again. Since Media Bar's August 2026 timer change they only moved after a trailer finished playing.
 - The "TV show" limit in the plugin settings is now passed to the slideshow (it was sent under a name the slideshow never read).
 - Custom fresh / rotten tomato icons set in the plugin settings now reach the slideshow (they were written into the IMDb icon's slot).
 - It only ever edits the real `index.html`, never Jellyfin's script files that happen to have "index-html" in their names.

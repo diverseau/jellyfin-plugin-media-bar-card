@@ -68,6 +68,9 @@ const CONFIG = {
   // ms the backdrop is shown before the trailer starts. 0 = immediately.
   trailerStartDelayMs: 3500,
 
+  // seconds. Longest a trailer holds its slide before the slideshow moves on. 0 = play the whole trailer.
+  maxTrailerSeconds: 30,
+
   // ms to wait for playback to actually begin before resuming the slideshow. Guards a silent failure.
   trailerPlaybackWatchdogMs: 4000,
   // 0-100. Volume once unmuted. Trailers always start muted.
@@ -152,6 +155,7 @@ const CONFIG_RULES = {
   fadeTransitionDuration: [0, 5000],
   youtubeApiLoadTimeoutMs: [1000, 60000],
   trailerStartDelayMs: [0, 60000],
+  maxTrailerSeconds: [0, 600],
   trailerPlaybackWatchdogMs: [500, 60000],
   trailerVolume: [0, 100],
   touchLayoutMaxWidth: [320, 2000],
@@ -3221,11 +3225,16 @@ const SlideshowManager = {
       }
     }
     if (CONFIG.slideAnimationEnabled) {
-      currentSlide.querySelector(".backdrop")?.classList.add("animate");
+      // The card stays still: no slow zoom or blur-in on its picture
+      if (!isCardLayout()) {
+        currentSlide.querySelector(".backdrop")?.classList.add("animate");
+      }
       currentSlide.querySelector(".logo")?.classList.add("animate");
     }
 
     STATE.slideshow.currentSlideIndex = index;
+    // Counts slide changes so a trailer limit never carries over to a later visit
+    STATE.slideshow.slideVisit = (STATE.slideshow.slideVisit || 0) + 1;
     this.persistSessionIndex(index);
 
     if (isPlateLayout()) {
@@ -3726,6 +3735,46 @@ const SlideshowManager = {
     STATE.slideshow.isVideoPlaying = true;
     this.setTrailerVisible(itemId, trailerContainer, true);
     STATE.slideshow.slideInterval?.stop();
+    this.armTrailerLimit(itemId, trailerContainer);
+  },
+
+  // A trailer holds its slide for at most CONFIG.maxTrailerSeconds. If the
+  // viewer is hovering or has paused when time is up, wait until they stop.
+  armTrailerLimit(itemId, trailerContainer) {
+    if (!(CONFIG.maxTrailerSeconds > 0)) return;
+
+    const visit = STATE.slideshow.slideVisit;
+    if (STATE.slideshow.trailerLimit?.visit === visit) return;
+    clearTimeout(STATE.slideshow.trailerLimit?.timer);
+
+    const check = () => {
+      const s = STATE.slideshow;
+      if (
+        s.slideVisit !== visit ||
+        s.itemIds[s.currentSlideIndex] !== itemId ||
+        !s.isVideoPlaying
+      ) {
+        if (s.trailerLimit?.visit === visit) s.trailerLimit = null;
+        return;
+      }
+      if (s.hoverHeld || s.isPaused || document.hidden) {
+        s.trailerLimit.timer = setTimeout(check, 1000);
+        return;
+      }
+
+      s.trailerLimit = null;
+      try {
+        s.players[itemId]?.pauseVideo?.();
+      } catch (error) {
+
+      }
+      this.onTrailerEnded(itemId, trailerContainer);
+    };
+
+    STATE.slideshow.trailerLimit = {
+      visit,
+      timer: setTimeout(check, CONFIG.maxTrailerSeconds * 1000),
+    };
   },
 
   onTrailerEnded(itemId, trailerContainer) {
@@ -3814,7 +3863,7 @@ const SlideshowManager = {
 
       this.createPaginationDots();
 
-      STATE.slideshow.slideInterval = new SlideTimer(() => {
+      const advance = () => {
         if (
           !STATE.slideshow.isPaused &&
           !STATE.slideshow.isVideoPlaying &&
@@ -3822,11 +3871,24 @@ const SlideshowManager = {
         ) {
           this.nextSlide();
         }
-      }, CONFIG.shuffleInterval);
-      STATE.slideshow.slideInterval.stop();
+      };
       STATE.slideshow.slideInterval = null; // Ensure that updateCurrentSlide doesn't restart the timer
 
       await this.updateCurrentSlide(STATE.slideshow.resumeIndex || 0);
+
+      // Now create the timer that updateCurrentSlide was kept from starting.
+      // Upstream stopped here, so slides never advanced unless a trailer ran
+      // to its end. A pending trailer, hover or pause starts it later.
+      const timer = new SlideTimer(advance, CONFIG.shuffleInterval);
+      STATE.slideshow.slideInterval = timer;
+      if (
+        STATE.slideshow.isPaused ||
+        STATE.slideshow.isVideoPlaying ||
+        STATE.slideshow.hoverHeld ||
+        STATE.slideshow.trailerStartTimer
+      ) {
+        timer.stop();
+      }
     } catch (error) {
       console.error("Error loading slideshow data:", error);
     } finally {

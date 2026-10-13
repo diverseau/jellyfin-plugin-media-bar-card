@@ -2312,6 +2312,10 @@
 
   #slides-container.layout-marquee.layout-card .backdrop,
   #slides-container.layout-marquee.layout-card .backdrop.with-video {
+    /* No slow zoom or blur-in on the card's picture */
+    animation: none;
+    transform: none;
+    transition: opacity 0.45s ease-in-out;
     position: absolute;
     inset: 0;
     width: 100%;
@@ -2546,4 +2550,12 @@
   #slides-container.layout-marquee.layout-card .slide-content {
     left: calc(var(--card-side) + 4.25rem);
   }
+}
+
+/* The stage takes focus (tabindex -1) when its buttons are clicked so the
+   arrow keys work; it is not a control itself, so don't ring it. The buttons
+   inside keep their own focus outlines. */
+#slides-container:focus,
+#slides-container:focus-visible {
+  outline: none;
 }
