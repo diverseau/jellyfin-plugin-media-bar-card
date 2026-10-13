@@ -46,6 +46,10 @@ const CONFIG = {
   slideAnimationEnabled: true,
   // true|false. Master switch for trailer playback, local and YouTube.
   enableTrailers: true,
+  // true|false. With the Hover Preview plugin (1.2+) installed, play the
+  // slide's preview clip (the same one its hover card plays) before falling
+  // back to a trailer or the picture.
+  previewClips: true,
 
   // true|false. Also play trailers on the small/touch layout. Off by default; only useful if the phone layout has a landscape frame.
   allowTrailersOnTouch: false,
@@ -189,6 +193,7 @@ const STRUCTURAL_CONFIG_KEYS = new Set([
   "useBlurHashPlaceholder",
   "libraries",
   "trailerLibraries",
+  "previewClips",
 ]);
 
 const lockedConfigKeys = new Set();
@@ -1136,6 +1141,296 @@ const createLocalPlayer = (video) => ({
     }
   },
 });
+
+// --- Preview clips -----------------------------------------------------------
+// Hover Preview (1.2+) exposes window.HoverPreview. A slide then plays the
+// same clip its hover card does, as a larger transcode, then fades back to the
+// picture and moves on. Nothing here runs without that plugin.
+
+const TICKS_PER_SECOND = 10000000;
+
+const PreviewClips = {
+  waiting: null,
+  holds: new Set(),
+  observed: null,
+  observer: null,
+  listening: false,
+
+  api() {
+    const api = window.HoverPreview;
+    return api && api.apiVersion >= 1 && typeof api.getPlan === "function"
+      ? api
+      : null;
+  },
+
+  // Both plugins' scripts are deferred, so Hover Preview has set itself up by
+  // DOMContentLoaded or isn't there (or is switched off).
+  ready() {
+    if (this.api() || document.readyState !== "loading") {
+      return Promise.resolve(this.api());
+    }
+    if (!this.waiting) {
+      this.waiting = new Promise((resolve) =>
+        document.addEventListener("DOMContentLoaded", resolve, { once: true }),
+      );
+    }
+    return this.waiting.then(() => this.api());
+  },
+
+  enabled() {
+    return CONFIG.previewClips && !isTouchLayout() && !isDataSaverOn();
+  },
+
+  async clipFor(item) {
+    if (!this.enabled() || !item || !/^(Movie|Series)$/.test(item.Type)) {
+      return null;
+    }
+    const api = await this.ready();
+    if (!api || !api.videoEnabled()) return null;
+    let plan = null;
+    try {
+      plan = await api.getPlan(item.Id, "banner");
+    } catch (error) {
+      return null;
+    }
+    const clip = plan ? api.pickClip(plan) : null;
+    if (!clip || (!clip.directUrl && !clip.transcodeUrl)) return null;
+    return { api, clip };
+  },
+
+  // Puts a clip player into the slide's video layer (made here when trailers
+  // are off) and returns that layer.
+  attach(slide, itemId, preview, trailerContainer) {
+    let layer = trailerContainer;
+    if (!layer) {
+      layer = SlideUtils.createElement("div", {
+        className: "video-container",
+        id: `trailer-${itemId}`,
+      });
+      layer.appendChild(
+        SlideUtils.createElement("div", {
+          className: "video-player",
+          id: `yt-player-${itemId}`,
+        }),
+      );
+      slide.prepend(layer);
+    }
+
+    const video = SlideUtils.createElement("video", {
+      className: "local-trailer preview-clip",
+      muted: "",
+      playsinline: "",
+      preload: "none",
+      disablepictureinpicture: "",
+      tabIndex: "-1",
+    });
+    video.muted = true;
+    layer.querySelector(".video-player")?.replaceChildren(video);
+
+    STATE.slideshow.players[itemId] = this.createPlayer(preview, video, {
+      playing: () => SlideshowManager.onTrailerPlaying(itemId, layer),
+      fading: () => SlideshowManager.setTrailerVisible(itemId, layer, false),
+      ended: () => SlideshowManager.onClipEnded(itemId, layer),
+      failed: () =>
+        SlideshowManager.onPlayerError({ data: "preview clip" }, itemId, layer),
+    });
+    STATE.slideshow.slideVideoIds[itemId] = `clip:${itemId}`;
+    this.listen();
+    return layer;
+  },
+
+  createPlayer({ api, clip }, video, on) {
+    const start = clip.startTicks / TICKS_PER_SECOND;
+    const duration = clip.durationTicks / TICKS_PER_SECOND;
+    const canDirect =
+      !!clip.directUrl &&
+      !!clip.directMimeType &&
+      video.canPlayType(clip.directMimeType) !== "";
+    let stream = null; // { transcode, session, seeked }
+    let volume = (CONFIG.trailerVolume || 0) / 100;
+    let fadeTimer = null;
+    let resumeOnRelease = false;
+
+    const elapsed = () =>
+      stream.transcode ? video.currentTime : video.currentTime - start;
+
+    const load = (transcode) => {
+      stream = { transcode, session: api.newPlaySessionId(), seeked: false };
+      const url = api.streamUrl(
+        transcode ? clip.transcodeUrl : clip.directUrl,
+        stream.session,
+      );
+      // A direct file has to seek to the clip; a transcode already starts there.
+      video.src = transcode ? url : `${url}#t=${start.toFixed(2)}`;
+      video.volume = volume;
+      video.load();
+    };
+
+    // Drops the stream and stops its transcode on the server.
+    const release = () => {
+      clearTimeout(fadeTimer);
+      fadeTimer = null;
+      resumeOnRelease = false;
+      const old = stream;
+      stream = null;
+      if (!old) return;
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      if (old.transcode) api.stopEncoding(old.session, false);
+    };
+
+    const play = () => {
+      const started = video.play();
+      if (started && typeof started.catch === "function") {
+        started.catch((error) => {
+          // AbortError: paused again before playback began, which is fine.
+          if (stream && error?.name !== "AbortError") on.failed();
+        });
+      }
+    };
+
+    // Fade the sound and picture out, then hand back to the slideshow.
+    const finish = () => {
+      if (fadeTimer) return;
+      on.fading();
+      const from = video.volume;
+      const began = performance.now();
+      const step = (now) => {
+        if (!fadeTimer) return;
+        const t = Math.min(1, (now - began) / api.fadeOutMs);
+        video.volume = from * (1 - t) * (1 - t);
+        if (t < 1) requestAnimationFrame(step);
+      };
+      fadeTimer = setTimeout(() => {
+        release();
+        on.ended();
+      }, api.fadeOutMs);
+      requestAnimationFrame(step);
+    };
+
+    video.addEventListener("loadedmetadata", () => {
+      if (stream && !stream.transcode && !stream.seeked) {
+        stream.seeked = true;
+        if (Math.abs(video.currentTime - start) > 1) video.currentTime = start;
+      }
+    });
+    video.addEventListener("timeupdate", () => {
+      if (stream && elapsed() >= duration - api.endTrimSeconds) finish();
+    });
+    video.addEventListener("playing", () => {
+      if (stream && !fadeTimer) on.playing();
+    });
+    video.addEventListener("error", () => {
+      if (!stream || fadeTimer) return;
+      if (!stream.transcode && clip.transcodeUrl) {
+        // Direct play failed (codec, container): fall back to a transcode once.
+        load(true);
+        play();
+        return;
+      }
+      release();
+      on.failed();
+    });
+
+    return {
+      isLocal: true,
+      isPreviewClip: true,
+      element: video,
+      // A transcode needs a moment to start on a busy server.
+      watchdogMs: Math.max(CONFIG.trailerPlaybackWatchdogMs, 20000),
+      playVideo() {
+        if (PreviewClips.holds.size) {
+          resumeOnRelease = true;
+          return;
+        }
+        if (fadeTimer) return;
+        if (!stream) {
+          if (!canDirect && !clip.transcodeUrl) {
+            on.failed();
+            return;
+          }
+          load(!canDirect);
+        }
+        play();
+      },
+      pauseVideo() {
+        resumeOnRelease = false;
+        video.pause();
+      },
+      // Only ever called with 0: start over, so drop the stream.
+      seekTo() {
+        release();
+      },
+      mute() {
+        video.muted = true;
+      },
+      unMute() {
+        video.muted = false;
+      },
+      setVolume(percent) {
+        volume = Math.max(0, Math.min(1, (percent || 0) / 100));
+        if (!fadeTimer) video.volume = volume;
+      },
+      getPlayerState() {
+        return video.paused ? 2 : 1;
+      },
+      hold() {
+        if (stream && !video.paused && !fadeTimer) {
+          resumeOnRelease = true;
+          video.pause();
+        }
+      },
+      unhold() {
+        if (!resumeOnRelease) return;
+        resumeOnRelease = false;
+        if (!STATE.slideshow.isPaused && !document.hidden) this.playVideo();
+      },
+      destroy() {
+        release();
+        video.remove();
+      },
+    };
+  },
+
+  // Holds pause the current clip: a hover card playing its own clip, or the
+  // banner scrolled out of view. It carries on when the last hold goes.
+  setHold(reason, on) {
+    if (on === this.holds.has(reason)) return;
+    if (on) this.holds.add(reason);
+    else this.holds.delete(reason);
+
+    const s = STATE.slideshow;
+    const player = s.players[s.itemIds[s.currentSlideIndex]];
+    if (!player?.isPreviewClip) return;
+    if (this.holds.size) player.hold();
+    else player.unhold();
+  },
+
+  listen() {
+    if (!this.listening) {
+      this.listening = true;
+      window.addEventListener("hoverpreview:playing", () =>
+        this.setHold("hover", true),
+      );
+      window.addEventListener("hoverpreview:stopped", () =>
+        this.setHold("hover", false),
+      );
+    }
+
+    const container = document.getElementById("slides-container");
+    if (!container || container === this.observed) return;
+    if (!("IntersectionObserver" in window)) return;
+    this.observer?.disconnect();
+    this.observed = container;
+    this.observer = new IntersectionObserver(
+      ([entry]) =>
+        this.setHold("offscreen", !entry || entry.intersectionRatio < 0.35),
+      { threshold: [0, 0.35, 0.6] },
+    );
+    this.observer.observe(container);
+  },
+};
 
 const BlurHash = {
   DIGITS:
@@ -2952,7 +3247,12 @@ const SlideCreator = {
 
       STATE.slideshow.slideVideoIds[itemId] = videoId || null;
 
-      if (hasLocalTrailer) {
+      // Preview clip first, then a trailer (if trailers are on), then the picture.
+      const preview = await PreviewClips.clipFor(item);
+
+      if (preview && slide.isConnected) {
+        PreviewClips.attach(slide, itemId, preview, trailerContainer);
+      } else if (hasLocalTrailer) {
         const trailerUrl = await ApiUtils.fetchLocalTrailerUrl(itemId);
 
         if (trailerUrl && document.getElementById(`trailer-${itemId}`)) {
@@ -3312,7 +3612,9 @@ const SlideshowManager = {
     this.pruneSlideCache();
 
     const videoId = STATE.slideshow.slideVideoIds[currentItemId];
-    const canPlayTrailer = CONFIG.enableTrailers && Boolean(videoId);
+    const isClip = String(videoId).startsWith("clip:");
+    const canPlayTrailer =
+      Boolean(videoId) && (isClip ? CONFIG.previewClips : CONFIG.enableTrailers);
 
     if (canPlayTrailer) {
       STATE.slideshow.trailerStartTimer = setTimeout(() => {
@@ -3378,6 +3680,7 @@ const SlideshowManager = {
       return;
     }
 
+    const watchdogMs = player.watchdogMs || CONFIG.trailerPlaybackWatchdogMs;
     clearTimeout(STATE.slideshow.trailerWatchdog);
     STATE.slideshow.trailerWatchdog = setTimeout(() => {
       if (
@@ -3385,11 +3688,11 @@ const SlideshowManager = {
         !STATE.slideshow.isVideoPlaying
       ) {
         console.warn(
-          `Trailer for ${itemId} did not start within ${CONFIG.trailerPlaybackWatchdogMs}ms; resuming slideshow.`,
+          `Trailer for ${itemId} did not start within ${watchdogMs}ms; resuming slideshow.`,
         );
         resumeTimer();
       }
-    }, CONFIG.trailerPlaybackWatchdogMs);
+    }, watchdogMs);
   },
 
   clearSlideTimers() {
@@ -3816,6 +4119,8 @@ const SlideshowManager = {
   // viewer is hovering or has paused when time is up, wait until they stop.
   armTrailerLimit(itemId, trailerContainer) {
     if (!(CONFIG.maxTrailerSeconds > 0)) return;
+    // Preview clips are short already and always play to the end.
+    if (STATE.slideshow.players[itemId]?.isPreviewClip) return;
 
     const visit = STATE.slideshow.slideVisit;
     if (STATE.slideshow.trailerLimit?.visit === visit) return;
@@ -3855,6 +4160,21 @@ const SlideshowManager = {
     STATE.slideshow.isVideoPlaying = false;
     this.setTrailerVisible(itemId, trailerContainer, false);
     this.nextSlide();
+  },
+
+  // The clip has faded back to the picture. Move on, unless the viewer is
+  // hovering or has paused: then the picture stays and the timer takes over.
+  onClipEnded(itemId, trailerContainer) {
+    const s = STATE.slideshow;
+    if (s.itemIds[s.currentSlideIndex] !== itemId) return;
+    if (s.hoverHeld || s.isPaused || !VisibilityObserver.wasVisible) {
+      s.isVideoPlaying = false;
+      this.setTrailerVisible(itemId, trailerContainer, false);
+      s.slideInterval?.stop();
+      if (!s.isPaused && !s.hoverHeld) s.slideInterval?.start();
+      return;
+    }
+    this.onTrailerEnded(itemId, trailerContainer);
   },
 
   onPlayerStateChange(event, itemId, trailerContainer) {
@@ -4177,6 +4497,7 @@ const SettingsPanel = {
 
     { key: "syncPageBackdrop", label: "Sync page backdrop", type: "switch" },
     { key: "pauseOnHover", label: "Pause on hover", type: "switch" },
+    { key: "previewClips", label: "Preview clips", type: "switch" },
     { key: "enableTrailers", label: "Trailers", type: "switch" },
 
     {
@@ -4435,7 +4756,7 @@ const SettingsPanel = {
 
     const volume = this.controls.get("trailerVolume");
     if (volume instanceof HTMLInputElement) {
-      const off = !CONFIG.enableTrailers;
+      const off = !CONFIG.enableTrailers && !CONFIG.previewClips;
       volume.disabled = off || lockedConfigKeys.has("trailerVolume");
       volume.closest(".ss-set-row")?.classList.toggle("is-inactive", off);
     }

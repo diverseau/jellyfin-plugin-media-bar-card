@@ -12,6 +12,7 @@ Everything Media Bar does (random or listed titles, trailers, filters, the gear 
 - **An ambient glow** behind the card, built from each title's own artwork colours. It changes with every slide and costs no extra downloads (it uses the blur preview Jellyfin already sends).
 - **Play** and **More info** pill buttons, and a clean `Genre • Year • Runtime • Rating` line.
 - **Previous / next** circle buttons beside the card (on the card's edges when the window is narrow).
+- **Preview clips**, with [Hover Preview](https://github.com/diverseau/jellyfin-plugin-hover-preview) 1.2 or newer installed: each slide plays the same 1 minute clip its hover card does (for shows, the same pick on each page load), at up to 1920 px. It fades back to the picture at the end and moves on. It pauses while a hover card plays its own clip, while the bar is scrolled out of view and while the tab is hidden. Without a clip a slide falls back to its trailer (if "Enable trailers" is on), then to the picture. Switch it off with "Play preview clips?" in the plugin settings or "Preview clips" in the gear menu.
 - **Trailers** play inside the card's rounded frame, for at most 30 seconds before the next slide (`maxTrailerSeconds`, 0 = whole trailer).
 - The card's picture stays still (no slow zoom).
 - Phones and short windows keep Media Bar's marquee layout.

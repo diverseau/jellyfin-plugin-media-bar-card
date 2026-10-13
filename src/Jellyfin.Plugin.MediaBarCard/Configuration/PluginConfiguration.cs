@@ -71,6 +71,8 @@ namespace Jellyfin.Plugin.MediaBarCard.Configuration
         public bool SyncPageBackdrop { get; set; } = false;
 
         public bool EnableTrailers { get; set; } = true;
+
+        public bool PreviewClips { get; set; } = true;
     }
 
     public class ImageSvgs
