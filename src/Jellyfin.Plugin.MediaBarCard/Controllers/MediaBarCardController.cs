@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Jellyfin.Extensions;
 using Jellyfin.Plugin.MediaBarCard.Configuration;
 using Jellyfin.Plugin.MediaBarCard.Helpers;
@@ -43,19 +43,6 @@ namespace Jellyfin.Plugin.MediaBarCard.Controllers
             }
         
             return Content(fileContents, contentType);
-        }
-
-        [HttpPost("Avatar/List")]
-        public ActionResult GetAvatarsList([FromBody] PatchRequestPayload payload)
-        {
-            string? content = TransformationPatches.AvatarsList(payload);
-
-            if (content == null)
-            {
-                return NotFound();
-            }
-            
-            return Content(content, "text/plain");
         }
 
         [HttpGet("WebConfig")]

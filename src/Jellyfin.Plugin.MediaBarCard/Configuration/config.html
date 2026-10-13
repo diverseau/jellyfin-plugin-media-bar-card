@@ -1,7 +1,7 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/html">
 <head>
-    <title>Media Bar</title>
+    <title>Media Bar Card</title>
 </head>
 <body>
 <div data-role="page" id="mediaBarCardConfigurationPage" class="page type-interior pluginConfigurationPage fullWidthContent">
@@ -71,6 +71,7 @@
                 </div>
             </div>
             <div id="web-config" class="jellyfin-tab-content" style="display: none;">
+                <div class="fieldDescription" style="margin-bottom: 1.5em;">These are the defaults for every browser. A viewer can still change them for their own browser from the gear on the bar, and their choice wins. Leave a number blank or at -1 to use the built-in default.</div>
                 <div>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="numShuffleInterval">Shuffle Interval</label>
@@ -174,122 +175,130 @@
         </form>
     </div>
     <script type="text/javascript">
-        if (typeof MediaBarCardConfig == 'undefined') {
-            
-            const MediaBarCardConfig = {
-                pluginId: "8711b158-b490-4d5f-84b5-80abddce3e79",
-                configurationWrapper: document.querySelector("#configurationWrapper"),
+        (function () {
+            const pluginId = "8711b158-b490-4d5f-84b5-80abddce3e79";
 
-                btnSave: document.querySelector("#saveConfig"),
-                
-                setupTabs: function() {
-                    const tabs = document.querySelectorAll('.jellyfin-tab-button');
-                    const tabContents = document.querySelectorAll('.jellyfin-tab-content');
-                    tabs.forEach(tab => {
-                        tab.addEventListener('click', () => {
-                            tabs.forEach(t => {
-                                t.classList.remove('active');
-                                t.style.color = '#ccc';
-                                t.style.borderBottom = '2px solid transparent';
-                            });
-                            tab.classList.add('active');
-                            tab.style.color = 'var(--primary-accent-color, #fff)';
-                            tab.style.borderBottom = '2px solid var(--primary-accent-color, #fff)';
-                            tabContents.forEach(content => {
-                                content.classList.remove('active');
-                                content.style.display = 'none';
-                            });
-                            const activeTab = document.getElementById(tab.dataset.tab);
-                            activeTab.classList.add('active');
-                            activeTab.style.display = 'block';
+            // Jellyfin can keep an earlier copy of this page in the DOM, so every
+            // lookup is scoped to the page that is being shown.
+            const field = (page, id) => page.querySelector("[data-id=" + id + "]");
+
+            // A blank or invalid number means "use the default" (-1)
+            const number = (page, id) => {
+                const value = parseInt(field(page, id).value, 10);
+                return Number.isFinite(value) ? value : -1;
+            };
+
+            const numbers = [
+                ["numShuffleInterval", "ShuffleInterval"],
+                ["numRetryInterval", "RetryInterval"],
+                ["numMinSwipeDistance", "MinSwipeDistance"],
+                ["numLoadingCheckInterval", "LoadingCheckInterval"],
+                ["numMaxPlotLength", "MaxPlotLength"],
+                ["numMaxMovies", "MaxMovies"],
+                ["numMaxTvShows", "MaxTvShows"],
+                ["numMaxItems", "MaxItems"],
+                ["numPreloadCount", "PreloadCount"],
+                ["numFadeTransitionDuration", "FadeTransitionDuration"],
+            ];
+            const switches = [
+                ["chkSlideAnimationEnabled", "SlideAnimationEnabled"],
+                ["chkEnableTrailers", "EnableTrailers"],
+                ["chkSyncPageBackdrop", "SyncPageBackdrop"],
+            ];
+
+            const setupTabs = (page) => {
+                const tabs = page.querySelectorAll(".jellyfin-tab-button");
+                const tabContents = page.querySelectorAll(".jellyfin-tab-content");
+                tabs.forEach((tab) => {
+                    tab.addEventListener("click", (event) => {
+                        event.preventDefault();
+                        tabs.forEach((t) => {
+                            t.classList.remove("active");
+                            t.style.color = "#ccc";
+                            t.style.borderBottom = "2px solid transparent";
                         });
+                        tab.classList.add("active");
+                        tab.style.color = "var(--primary-accent-color, #fff)";
+                        tab.style.borderBottom = "2px solid var(--primary-accent-color, #fff)";
+                        tabContents.forEach((content) => {
+                            content.classList.remove("active");
+                            content.style.display = "none";
+                        });
+                        const activeTab = page.querySelector("#" + tab.dataset.tab);
+                        activeTab.classList.add("active");
+                        activeTab.style.display = "block";
                     });
-                },
-                saveConfig: function (e) {
-                    e.preventDefault();
-                    Dashboard.showLoadingMsg();
-                    const config = {
-                        Enabled: document.querySelector("[data-id=enabledSelect]").value,
-                        UseAvatarsFile: document.querySelector("[data-id=chkUseAvatarsFile]").checked,
-                        AllowUnpinnedRefs: document.querySelector("[data-id=chkAllowUnpinnedRefs]").checked,
-                        AvatarsPlaylist: document.querySelector("[data-id=txtAvatarsPlaylist]").value,
-                        VersionString: document.querySelector("[data-id=txtVersionString]").value,
-                        WebConfig: {
-                            ImageSvgs: {
-                                ImdbLogo: null,
-                                TomatoLogo: null,
-                                FreshTomato: null,
-                                RottenTomato: null, 
-                            },
-                            ShuffleInterval: parseInt(document.querySelector("[data-id=numShuffleInterval]").value, 10),
-                            RetryInterval: parseInt(document.querySelector("[data-id=numRetryInterval]").value, 10),
-                            MinSwipeDistance: parseInt(document.querySelector("[data-id=numMinSwipeDistance]").value, 10),
-                            LoadingCheckInterval: parseInt(document.querySelector("[data-id=numLoadingCheckInterval]").value, 10),
-                            MaxPlotLength: parseInt(document.querySelector("[data-id=numMaxPlotLength]").value, 10),
-                            MaxMovies: parseInt(document.querySelector("[data-id=numMaxMovies]").value, 10),
-                            MaxTvShows: parseInt(document.querySelector("[data-id=numMaxTvShows]").value, 10),
-                            MaxItems: parseInt(document.querySelector("[data-id=numMaxItems]").value, 10),
-                            PreloadCount: parseInt(document.querySelector("[data-id=numPreloadCount]").value, 10),
-                            FadeTransitionDuration: parseInt(document.querySelector("[data-id=numFadeTransitionDuration]").value, 10),
-                            SlideAnimationEnabled: document.querySelector("[data-id=chkSlideAnimationEnabled]").checked,
-                            EnableTrailers: document.querySelector("[data-id=chkEnableTrailers]").checked,
-                            SyncPageBackdrop: document.querySelector("[data-id=chkSyncPageBackdrop]").checked,
-                        }
-                    };
+                });
+            };
 
-                    window.ApiClient.updatePluginConfiguration(MediaBarCardConfig.pluginId, config)
-                        .then(Dashboard.processPluginConfigurationUpdateResult)
-                        .catch(function (error) {
-                            console.error(error);
-                        })
-                        .finally(function () {
-                            Dashboard.hideLoadingMsg();
-                        });
-                },
-                loadConfig: function () {
-                    Dashboard.showLoadingMsg();
-                    window.ApiClient.getPluginConfiguration(MediaBarCardConfig.pluginId)
-                        .then(function (config) {
-                            document.querySelector("[data-id=enabledSelect]").value = config.Enabled;
-                            document.querySelector("[data-id=chkUseAvatarsFile]").checked = config.UseAvatarsFile;
-                            document.querySelector("[data-id=chkAllowUnpinnedRefs]").checked = config.AllowUnpinnedRefs;
-                            document.querySelector("[data-id=txtAvatarsPlaylist]").value = config.AvatarsPlaylist;
-                            
-                            document.querySelector("[data-id=txtVersionString]").value = config.VersionString;
-                            
-                            document.querySelector("[data-id=numShuffleInterval]").value = config.WebConfig.ShuffleInterval;
-                            document.querySelector("[data-id=numRetryInterval]").value = config.WebConfig.RetryInterval;
-                            document.querySelector("[data-id=numMinSwipeDistance]").value = config.WebConfig.MinSwipeDistance;
-                            document.querySelector("[data-id=numLoadingCheckInterval]").value = config.WebConfig.LoadingCheckInterval;
-                            document.querySelector("[data-id=numMaxPlotLength]").value = config.WebConfig.MaxPlotLength;
-                            document.querySelector("[data-id=numMaxMovies]").value = config.WebConfig.MaxMovies;
-                            document.querySelector("[data-id=numMaxTvShows]").value = config.WebConfig.MaxTvShows;
-                            document.querySelector("[data-id=numMaxItems]").value = config.WebConfig.MaxItems;
-                            document.querySelector("[data-id=numPreloadCount]").value = config.WebConfig.PreloadCount;
-                            document.querySelector("[data-id=numFadeTransitionDuration]").value = config.WebConfig.FadeTransitionDuration;
-                            document.querySelector("[data-id=chkSlideAnimationEnabled]").checked = config.WebConfig.SlideAnimationEnabled;
-                            document.querySelector("[data-id=chkEnableTrailers]").checked = config.WebConfig.EnableTrailers;
-                        })
-                        .catch(function (error) {
-                            console.error(error);
-                        })
-                        .finally(function () {
-                            Dashboard.hideLoadingMsg();
-                        });
-                },
-                init: function () {
-                    MediaBarCardConfig.setupTabs();
-                    
-                    MediaBarCardConfig.btnSave.addEventListener("click", MediaBarCardConfig.saveConfig);
-                    MediaBarCardConfig.loadConfig();
-                }
-            }
+            const loadConfig = (page) => {
+                Dashboard.showLoadingMsg();
+                window.ApiClient.getPluginConfiguration(pluginId)
+                    .then((config) => {
+                        // Kept so a save sends back fields this page has no input for
+                        // (such as custom rating icons) unchanged
+                        page.mediaBarCardConfig = config;
+                        const web = config.WebConfig || {};
 
-            // view.addEventListener("viewshow", function (e) {
-            document.querySelector('#mediaBarCardConfigurationPage').addEventListener("pageshow", function () {
-                MediaBarCardConfig.init();
+                        field(page, "enabledSelect").value = config.Enabled;
+                        field(page, "chkUseAvatarsFile").checked = config.UseAvatarsFile;
+                        field(page, "chkAllowUnpinnedRefs").checked = config.AllowUnpinnedRefs;
+                        field(page, "txtAvatarsPlaylist").value = config.AvatarsPlaylist || "";
+                        field(page, "txtVersionString").value = config.VersionString || "";
+
+                        numbers.forEach(([id, key]) => {
+                            field(page, id).value = web[key] ?? -1;
+                        });
+                        switches.forEach(([id, key]) => {
+                            field(page, id).checked = Boolean(web[key]);
+                        });
+                    })
+                    .catch((error) => console.error(error))
+                    .finally(() => Dashboard.hideLoadingMsg());
+            };
+
+            const saveConfig = (page, event) => {
+                event.preventDefault();
+                const loaded = page.mediaBarCardConfig;
+                if (!loaded) return;
+
+                const config = Object.assign({}, loaded, {
+                    Enabled: field(page, "enabledSelect").value,
+                    UseAvatarsFile: field(page, "chkUseAvatarsFile").checked,
+                    AllowUnpinnedRefs: field(page, "chkAllowUnpinnedRefs").checked,
+                    AvatarsPlaylist: field(page, "txtAvatarsPlaylist").value,
+                    VersionString: field(page, "txtVersionString").value,
+                });
+                const web = Object.assign({}, loaded.WebConfig || {});
+                numbers.forEach(([id, key]) => {
+                    web[key] = number(page, id);
+                });
+                switches.forEach(([id, key]) => {
+                    web[key] = field(page, id).checked;
+                });
+                config.WebConfig = web;
+
+                Dashboard.showLoadingMsg();
+                window.ApiClient.updatePluginConfiguration(pluginId, config)
+                    .then((result) => {
+                        page.mediaBarCardConfig = config;
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    })
+                    .catch((error) => console.error(error))
+                    .finally(() => Dashboard.hideLoadingMsg());
+            };
+
+            // Wire each copy of the page once, then reload its values on every show
+            document.querySelectorAll("#mediaBarCardConfigurationPage").forEach((page) => {
+                if (page.dataset.wired) return;
+                page.dataset.wired = "true";
+
+                setupTabs(page);
+                // Submit covers both the Save button and Enter in a field
+                page.querySelector("form").addEventListener("submit", (event) => saveConfig(page, event));
+                page.addEventListener("pageshow", () => loadConfig(page));
             });
-        }
+        })();
     </script>
 </div>
 </body>

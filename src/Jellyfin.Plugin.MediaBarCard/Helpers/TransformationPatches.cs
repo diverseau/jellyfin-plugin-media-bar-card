@@ -56,16 +56,23 @@ namespace Jellyfin.Plugin.MediaBarCard.Helpers
 
             StringWriter stringWriter = new StringWriter();
 
-            stringWriter.WriteLine(MediaBarPlugin.Instance.Configuration.AvatarsPlaylist);
+            // A comment line: the slideshow reads every other line as an item id or filter
+            stringWriter.WriteLine("# " + MediaBarPlugin.Instance.Configuration.AvatarsPlaylist);
                 
             List<Guid> idsWritten = new List<Guid>();
                 
             foreach (Tuple<LinkedChild, BaseItem> item in itemsRaw)
             {
-                BaseItem itemToUse = item.Item2;
+                BaseItem? itemToUse = item.Item2;
                 if (item.Item2 is Episode episode)
                 {
+                    // An episode whose series is missing from the library has no Series
                     itemToUse = episode.Series;
+                }
+
+                if (itemToUse == null)
+                {
+                    continue;
                 }
 
                 if (!idsWritten.Contains(itemToUse.Id))
@@ -136,27 +143,8 @@ namespace Jellyfin.Plugin.MediaBarCard.Helpers
                 version = "main";
             }
 
-            return $"https://cdn.jsdelivr.net/gh/diverseau/jellyfin-plugin-media-bar-card@{version}";
-        }
-
-        public static string HomeHtmlChunk(PatchRequestPayload payload)
-        {
-            Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{typeof(MediaBarPlugin).Namespace}.Inject.home-html.chunk.js")!;
-            using TextReader reader = new StreamReader(stream);
-
-            string regex = Regex.Replace(payload.Contents!, "(id=\"homeTab\" data-index=\"0\">)", $"$1{reader.ReadToEnd()}");
-            
-            return regex;
-        }
-
-        public static string MainBundle(PatchRequestPayload payload)
-        {
-            string replacementText =
-                "window.PlaybackManager=this.playbackManager;console.log(\"PlaybackManager is now globally available:\",window.PlaybackManager);";
-            
-            string regex = Regex.Replace(payload.Contents!, @"(this\.playbackManager=e,)", $"$1{replacementText}");
-
-            return regex;
+            // Admin-entered, and it ends up inside an HTML attribute
+            return $"https://cdn.jsdelivr.net/gh/diverseau/jellyfin-plugin-media-bar-card@{Uri.EscapeDataString(version)}";
         }
     }
 }

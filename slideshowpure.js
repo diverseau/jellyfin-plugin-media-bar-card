@@ -372,8 +372,53 @@ applyConfig(window.SlideshowConfig, { trusted: true, label: "index.html" });
 
 const CONFIG_SERVER_DEFAULTS = JSON.parse(JSON.stringify(CONFIG));
 
-applyConfig(readStoredConfig(), { label: "localStorage" });
-applyConfig(readUrlConfig(), { label: "url" });
+const applyViewerConfig = () => {
+  applyConfig(readStoredConfig(), { label: "localStorage" });
+  applyConfig(readUrlConfig(), { label: "url" });
+};
+
+applyViewerConfig();
+
+// The plugin's settings (Dashboard > Plugins > Media Bar Card). Loaded before
+// the slideshow starts so they apply to the first slide, then this browser's
+// gear-menu choices and ?ss_ overrides go back on top. Unset numbers are -1.
+let serverConfigPromise = null;
+
+const loadServerConfig = () => {
+  if (serverConfigPromise) return serverConfigPromise;
+
+  serverConfigPromise = (async () => {
+    const controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    const timeout = setTimeout(() => controller?.abort(), 4000);
+    try {
+      const response = await fetch(
+        `${STATE.jellyfinData.serverAddress}/MediaBarCard/WebConfig`,
+        { signal: controller?.signal },
+      );
+      if (!response.ok) return;
+
+      const server = await response.json();
+      if (!server || typeof server !== "object") return;
+
+      // The settings page calls the series cap "MaxTvShows"
+      if ("MaxTvShows" in server) {
+        server.MaxSeries = server.MaxTvShows;
+        delete server.MaxTvShows;
+      }
+
+      applyConfig(server, { trusted: true, sentinel: -1, label: "plugin" });
+      Object.assign(CONFIG_SERVER_DEFAULTS, JSON.parse(JSON.stringify(CONFIG)));
+      applyViewerConfig();
+    } catch (error) {
+      console.warn("Slideshow: could not load the plugin settings; using defaults.", error);
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+
+  return serverConfigPromise;
+};
 
 const STATE = {
   jellyfinData: {
@@ -826,6 +871,9 @@ const bootstrap = async () => {
       console.warn("Slideshow: ApiClient data incomplete, not starting.");
       return;
     }
+
+    await loadServerConfig();
+    mark("plugin-config-ready");
 
     await initLocalization();
     mark("localization-ready");
@@ -1941,7 +1989,8 @@ const VisibilityObserver = {
 
     const activeTab = document.querySelector(".emby-tab-button-active");
     const hash = window.location.hash;
-    const onHome = hash === "#/home.html" || hash === "#/home";
+    const path = hash.split("?")[0];
+    const onHome = path === "#/home.html" || path === "#/home";
 
     const isVisible =
       onHome &&
@@ -2682,6 +2731,12 @@ const SlideCreator = {
       push("genre", item.Genres.slice(0, 2).join(" · "));
     }
 
+    if (isCardLayout()) {
+      // "Drama • 2019 • 1h 40m": genre leads on the card
+      const rank = { genre: 0, year: 1, rating: 2, critics: 3, runtime: 4 };
+      parts.sort((a, b) => (rank[a[0]] ?? 9) - (rank[b[0]] ?? 9));
+    }
+
     parts.forEach(([kind, text, isHtml]) => {
       const attrs = { className: `spec-item spec-${kind}` };
       if (isHtml) attrs.innerHTML = text;
@@ -3171,7 +3226,7 @@ const SlideshowManager = {
         player.mute();
       } else {
         player.unMute();
-        player.setVolume(50);
+        player.setVolume(CONFIG.trailerVolume);
       }
     }
   },
@@ -3635,19 +3690,35 @@ const SlideshowManager = {
     }
   },
 
-  initKeyboardEvents() {
+  // Per container: a layout change rebuilds the container, so this runs on
+  // every init while the document listeners below are attached once.
+  initContainerFocus() {
     const container = SlideUtils.getOrCreateSlidesContainer();
+    if (container.dataset.focusReady) return;
+    container.dataset.focusReady = "true";
 
     container.setAttribute("tabindex", "-1");
     container.addEventListener("mousedown", () => {
       container.focus({ preventScroll: true });
     });
+  },
+
+  initKeyboardEvents() {
+    // Look the container up each time; the one present now may be replaced
+    const stage = () => document.getElementById("slides-container");
+
+    // Hidden buttons (the card layout hides the heart) can't take focus
+    const visibleSibling = (element, step) => {
+      let next = element?.[step];
+      while (next && next.offsetParent === null) next = next[step];
+      return next || null;
+    };
 
     document.addEventListener("focusin", (event) => {
-      STATE.slideshow.containerFocused = container.contains(event.target);
+      STATE.slideshow.containerFocused = Boolean(stage()?.contains(event.target));
     });
     document.addEventListener("focusout", (event) => {
-      if (!container.contains(event.relatedTarget)) {
+      if (!stage()?.contains(event.relatedTarget)) {
         STATE.slideshow.containerFocused = false;
       }
     });
@@ -3655,6 +3726,9 @@ const SlideshowManager = {
     document.addEventListener("keydown", (event) => {
       if (!STATE.slideshow.containerFocused) return;
       if (!VisibilityObserver.wasVisible) return;
+
+      const container = stage();
+      if (!container) return;
 
       const active = document.activeElement;
       if (
@@ -3672,7 +3746,7 @@ const SlideshowManager = {
 
       switch (event.key) {
         case "ArrowRight": {
-          const next = focusedButton?.nextElementSibling;
+          const next = visibleSibling(focusedButton, "nextElementSibling");
           if (next) next.focus();
           else this.nextSlide();
           event.preventDefault();
@@ -3680,7 +3754,7 @@ const SlideshowManager = {
         }
 
         case "ArrowLeft": {
-          const previous = focusedButton?.previousElementSibling;
+          const previous = visibleSibling(focusedButton, "previousElementSibling");
           if (previous) previous.focus();
           else this.prevSlide();
           event.preventDefault();
@@ -4545,6 +4619,7 @@ const slidesInit = async () => {
 
     SlideshowManager.initTouchEvents();
     SlideshowManager.initHoverPause();
+    SlideshowManager.initContainerFocus();
     initArrowNavigation();
 
     if (!STATE.slideshow.listenersAttached) {

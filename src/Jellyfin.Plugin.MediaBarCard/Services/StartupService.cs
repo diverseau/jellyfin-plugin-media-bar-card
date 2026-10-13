@@ -84,6 +84,14 @@ namespace Jellyfin.Plugin.MediaBarCard.Services
                         pluginInterfaceType.GetMethod("RegisterTransformation")?.Invoke(null, new object?[] { payload });
                     }
                 }
+                else
+                {
+                    m_logger.LogWarning("Media Bar Card: this File Transformation version has no PluginInterface; the bar will not be added to the web client");
+                }
+            }
+            else
+            {
+                m_logger.LogWarning("Media Bar Card: the File Transformation plugin is not installed, so the bar will not be added to the web client");
             }
 
             return Task.CompletedTask;

@@ -2390,11 +2390,6 @@
     text-shadow: 0 1px 6px rgb(0 0 0 / 0.5);
   }
 
-  #slides-container.layout-marquee.layout-card .spec-genre { order: 1; }
-  #slides-container.layout-marquee.layout-card .spec-year { order: 2; }
-  #slides-container.layout-marquee.layout-card .spec-runtime { order: 3; }
-  #slides-container.layout-marquee.layout-card .spec-cert { order: 4; }
-
   #slides-container.layout-marquee.layout-card .spec-item,
   #slides-container.layout-marquee.layout-card .spec-cert,
   #slides-container.layout-marquee.layout-card .spec-item + .spec-item,
@@ -2409,10 +2404,16 @@
     letter-spacing: 0;
   }
 
-  #slides-container.layout-marquee.layout-card .spec-year::before,
-  #slides-container.layout-marquee.layout-card .spec-runtime::before,
-  #slides-container.layout-marquee.layout-card .spec-cert::before,
-  #slides-container.layout-marquee.layout-card .spec-item + .spec-cert::before {
+  #slides-container.layout-marquee.layout-card .spec-item::before,
+  #slides-container.layout-marquee.layout-card .spec-cert::before {
+    content: none;
+  }
+
+  /* A bullet before every shown part except the first. Ratings are hidden on
+     the card, so they never count as the part before. */
+  #slides-container.layout-marquee.layout-card
+    :is(.spec-genre, .spec-year, .spec-runtime, .spec-cert)
+    ~ :is(.spec-year, .spec-runtime, .spec-cert)::before {
     content: "•";
     position: static;
     width: auto;

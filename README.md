@@ -21,8 +21,10 @@ You can still switch to Marquee, Plate or Classic from the gear menu on the bar.
 It also fixes some Media Bar issues:
 
 - Slides advance on their own again. Since Media Bar's August 2026 timer change they only moved after a trailer finished playing.
-- The "TV show" limit in the plugin settings is now passed to the slideshow (it was sent under a name the slideshow never read).
-- Custom fresh / rotten tomato icons set in the plugin settings now reach the slideshow (they were written into the IMDb icon's slot).
+- The plugin settings now apply from the first slide. They used to arrive after the slideshow had started, so settings like "Enable trailers" and "Slide animation" were ignored. They are the defaults for every browser; a choice made in the gear menu on the bar still wins for that browser.
+- The settings page keeps "Sync page backdrop" and custom rating icons when you save, saves only once per click, and treats a blank number as "default".
+- The "TV show" limit and custom fresh / rotten tomato icons in the plugin settings reach the slideshow.
+- The bar shows on `#/home?tab=0` too, keyboard controls keep working after a layout change, and unmuting uses the trailer volume setting.
 - It only ever edits the real `index.html`, never Jellyfin's script files that happen to have "index-html" in their names.
 
 ## Install
